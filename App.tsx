@@ -419,13 +419,19 @@ const App: React.FC = () => {
     toast.success('Backup uğurla yükləndi');
   };
 
+  const handleDashboardNavigate = (target: 'sales' | 'expenses' | 'inventory') => {
+    if (target === 'sales') setActiveTab(Tab.SALES);
+    if (target === 'expenses') setActiveTab(Tab.EXPENSES);
+    if (target === 'inventory') setActiveTab(Tab.INVENTORY);
+  };
+
   const renderContent = () => {
     if (!currentUser) return null;
     const role = currentUser.role;
 
     switch (activeTab) {
       case Tab.DASHBOARD:
-        return <Dashboard stats={stats} sales={sales} expenses={expenses} />;
+        return <Dashboard stats={stats} sales={sales} expenses={expenses} onNavigate={handleDashboardNavigate} />;
       case Tab.INVENTORY:
         return (
           <Inventory
@@ -545,7 +551,7 @@ const App: React.FC = () => {
           />
         );
       default:
-        return <Dashboard stats={stats} sales={sales} expenses={expenses} />;
+        return <Dashboard stats={stats} sales={sales} expenses={expenses} onNavigate={handleDashboardNavigate} />;
     }
   };
 

@@ -1,29 +1,44 @@
 import React, { useState, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { DashboardStats, Sale, Expense } from '../types';
-import { TrendingUp, AlertTriangle, Package, DollarSign, Calendar, Star, Wallet } from 'lucide-react';
+import { TrendingUp, AlertTriangle, Package, DollarSign, Calendar, Star, Wallet, ArrowUpRight } from 'lucide-react';
 import { getSaleNetProfit, getSaleNetTotal } from '../utils/erpMath';
 
 interface DashboardProps {
   stats: DashboardStats;
   sales: Sale[];
   expenses: Expense[];
+  onNavigate?: (target: 'sales' | 'expenses' | 'inventory') => void;
 }
 
-const StatCard: React.FC<{ title: string; value: string; subtitle?: string; icon: React.ReactNode; color: string }> = ({ title, value, subtitle, icon, color }) => (
-  <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100 flex items-center justify-between transition-transform hover:scale-[1.02] group">
-    <div>
+const StatCard: React.FC<{
+  title: string;
+  value: string;
+  subtitle?: string;
+  icon: React.ReactNode;
+  color: string;
+  onClick?: () => void;
+}> = ({ title, value, subtitle, icon, color, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className="bg-white p-5 rounded-xl shadow-sm border border-slate-100 flex items-center justify-between text-left transition-all hover:-translate-y-0.5 hover:shadow-md hover:border-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 group"
+  >
+    <div className="min-w-0">
       <p className="text-sm text-slate-500 font-medium mb-1">{title}</p>
       <h3 className="text-2xl font-bold text-slate-800 tracking-tight leading-tight">{value}</h3>
       {subtitle && <p className="text-xs text-emerald-600 font-medium mt-1">{subtitle}</p>}
+      <span className="mt-3 inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity">
+        Bax <ArrowUpRight size={12} />
+      </span>
     </div>
     <div className={`p-3.5 rounded-2xl ${color} text-white shadow-md group-hover:rotate-6 transition-transform`}>
       {icon}
     </div>
-  </div>
+  </button>
 );
 
-const Dashboard: React.FC<DashboardProps> = ({ stats, sales, expenses }) => {
+const Dashboard: React.FC<DashboardProps> = ({ stats, sales, expenses, onNavigate }) => {
   const [sortOrder, setSortOrder] = useState<'date' | 'amount-desc' | 'amount-asc'>('date');
   const [dateRange, setDateRange] = useState<'today' | 'week' | 'month' | 'all'>('today');
 
@@ -142,6 +157,7 @@ const Dashboard: React.FC<DashboardProps> = ({ stats, sales, expenses }) => {
           subtitle={dateRange !== 'today' ? `Bugün: +${todayRevenue.toFixed(2)} ₼` : undefined}
           icon={<TrendingUp size={24} />} 
           color="bg-emerald-500" 
+          onClick={() => onNavigate?.('sales')}
         />
         <StatCard 
           title="Xalis Mənfəət" 
@@ -149,6 +165,7 @@ const Dashboard: React.FC<DashboardProps> = ({ stats, sales, expenses }) => {
           subtitle={dateRange !== 'today' ? `Bugün: +${todayProfit.toFixed(2)} ₼` : undefined}
           icon={<DollarSign size={24} />} 
           color="bg-blue-500" 
+          onClick={() => onNavigate?.('sales')}
         />
         <StatCard 
           title="Ümumi Xərclər" 
@@ -156,6 +173,7 @@ const Dashboard: React.FC<DashboardProps> = ({ stats, sales, expenses }) => {
           subtitle={`${filteredExpenses.length} xərc qeydi`}
           icon={<Wallet size={24} />} 
           color="bg-rose-500" 
+          onClick={() => onNavigate?.('expenses')}
         />
         <StatCard 
           title="Satış Sayı" 
@@ -163,6 +181,7 @@ const Dashboard: React.FC<DashboardProps> = ({ stats, sales, expenses }) => {
           subtitle={dateRange !== 'today' ? `Bugün: ${todayCount} satış` : undefined}
           icon={<Package size={24} />} 
           color="bg-indigo-500" 
+          onClick={() => onNavigate?.('sales')}
         />
         <StatCard 
           title="Azalan Məhsul" 
@@ -170,6 +189,7 @@ const Dashboard: React.FC<DashboardProps> = ({ stats, sales, expenses }) => {
           subtitle={stats.lowStockCount > 0 ? "Əlavə edilməlidir" : "Hər şey qaydasındadır"}
           icon={<AlertTriangle size={24} />} 
           color={stats.lowStockCount > 0 ? "bg-red-500" : "bg-amber-500"} 
+          onClick={() => onNavigate?.('inventory')}
         />
       </div>
 

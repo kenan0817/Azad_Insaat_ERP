@@ -5,6 +5,67 @@ import { toast } from './Toast';
 import { generateId } from '../utils/id';
 
 const COMMON_UNITS = ['ədəd', 'kq', 'metr', 'litr', 'rulon', 'lövhə', 'kisə', 'vedrə', 'qutu'];
+const PRODUCT_IMAGE_MAX_SIZE = 900;
+const PRODUCT_IMAGE_QUALITY = 0.82;
+
+const optimizeProductImage = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) {
+      reject(new Error('Zəhmət olmasa şəkil faylı seçin'));
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      const scale = Math.min(1, PRODUCT_IMAGE_MAX_SIZE / Math.max(image.width, image.height));
+      const width = Math.max(1, Math.round(image.width * scale));
+      const height = Math.max(1, Math.round(image.height * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d');
+      if (!context) {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error('Şəkil emal edilə bilmədi'));
+        return;
+      }
+
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, width, height);
+      context.drawImage(image, 0, 0, width, height);
+      URL.revokeObjectURL(objectUrl);
+      resolve(canvas.toDataURL('image/jpeg', PRODUCT_IMAGE_QUALITY));
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('Şəkil oxuna bilmədi'));
+    };
+    image.src = objectUrl;
+  });
+};
+
+const ProductImage: React.FC<{ product: Product; variant?: 'compact' | 'table' | 'mobile' }> = ({ product, variant = 'table' }) => {
+  const sizeClass = {
+    compact: 'w-20 h-20 rounded-2xl',
+    table: 'w-14 h-14 rounded-2xl',
+    mobile: 'w-24 h-24 rounded-2xl',
+  }[variant];
+  const iconSize = variant === 'table' ? 22 : 28;
+
+  return (
+    <div className={`${sizeClass} shrink-0 overflow-hidden border border-slate-200 bg-gradient-to-br from-slate-50 to-slate-100 shadow-sm ring-1 ring-white`}>
+      {product.imageUrl ? (
+        <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
+      ) : (
+        <div className="w-full h-full flex flex-col items-center justify-center text-slate-400">
+          <Package size={iconSize} />
+          {variant !== 'table' && <span className="mt-1 text-[10px] font-bold uppercase text-slate-400">Şəkil</span>}
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface InventoryProps {
   products: Product[];
@@ -165,6 +226,23 @@ const Inventory: React.FC<InventoryProps> = ({ products, categories, setCategori
     reader.readAsText(file);
   };
 
+  const handleProductImageUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+    setProd: React.Dispatch<React.SetStateAction<any>>
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    try {
+      const imageUrl = await optimizeProductImage(file);
+      setProd((current: any) => ({ ...current, imageUrl }));
+      toast.success('Məhsul şəkli əlavə edildi');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Şəkil əlavə edilə bilmədi');
+    }
+  };
+
   const handleSort = (key: keyof Product) => {
     let direction: 'asc' | 'desc' = 'asc';
     if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
@@ -249,28 +327,49 @@ const Inventory: React.FC<InventoryProps> = ({ products, categories, setCategori
   const renderProductFormFields = (prod: any, setProd: any) => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
       <div className="xl:col-span-6">
-        <label className="block text-sm font-medium text-slate-700 mb-1">Şəkil URL</label>
-        <div className="flex gap-3 items-center">
-            <div className="relative flex-1">
-                <ImageIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={18} />
-                <input 
-                    type="text" 
-                    className="w-full border border-slate-300 pl-10 pr-3 py-3 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all bg-slate-50 focus:bg-white"
-                    placeholder="https://example.com/image.jpg"
-                    value={prod.imageUrl || ''}
-                    onChange={e => setProd({...prod, imageUrl: e.target.value})}
-                />
-            </div>
-            {prod.imageUrl && (
-                <div className="w-12 h-12 rounded-lg border border-slate-200 overflow-hidden bg-slate-50 shrink-0 shadow-sm group relative">
-                    <img 
-                        src={prod.imageUrl} 
-                        alt="Preview" 
-                        className="w-full h-full object-cover" 
-                        onError={(e) => (e.currentTarget.style.display = 'none')} 
-                    />
-                </div>
+        <label className="block text-sm font-medium text-slate-700 mb-2">Məhsul şəkli</label>
+        <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="aspect-square rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center">
+            {prod.imageUrl ? (
+              <img src={prod.imageUrl} alt="Preview" className="w-full h-full object-cover" />
+            ) : (
+              <div className="text-center text-slate-400 px-4">
+                <ImageIcon size={34} className="mx-auto mb-2" />
+                <p className="text-xs font-bold uppercase tracking-wide">Şəkil yoxdur</p>
+              </div>
             )}
+          </div>
+          <div className="flex flex-col justify-center gap-3">
+            <div>
+              <p className="text-sm font-bold text-slate-800">Real məhsul fotosu əlavə et</p>
+              <p className="text-xs text-slate-500 mt-1">
+                JPG, PNG və WEBP qəbul olunur. Şəkil mobil və desktop üçün avtomatik optimallaşdırılır.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <label className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold shadow-sm cursor-pointer transition-colors">
+                <Upload size={16} />
+                Şəkil seç
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(event) => handleProductImageUpload(event, setProd)}
+                />
+              </label>
+              {prod.imageUrl && (
+                <button
+                  type="button"
+                  onClick={() => setProd((current: any) => ({ ...current, imageUrl: '' }))}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-sm font-bold transition-colors"
+                >
+                  <X size={16} />
+                  Sil
+                </button>
+              )}
+            </div>
+            {prod.imageUrl && <p className="text-xs text-emerald-600 font-semibold">Şəkil əlavə olunub və məhsul kartlarında görünəcək.</p>}
+          </div>
         </div>
       </div>
 
@@ -550,30 +649,22 @@ const Inventory: React.FC<InventoryProps> = ({ products, categories, setCategori
           {sortedProducts.map(product => {
             const isLow = product.stock < lowStockThreshold;
             return (
-              <div key={product.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-2 space-y-1.5">
-                <div className="flex items-start gap-2.5">
-                  {product.imageUrl ? (
-                    <div className="w-10 h-10 shrink-0 rounded-xl border border-slate-100 overflow-hidden bg-slate-50">
-                      <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
-                    </div>
-                  ) : (
-                    <div className="w-10 h-10 shrink-0 rounded-xl border border-slate-100 bg-slate-50 flex items-center justify-center text-slate-400">
-                      <Package size={17} />
-                    </div>
-                  )}
+              <div key={product.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 space-y-3">
+                <div className="flex items-start gap-3">
+                  <ProductImage product={product} variant="compact" />
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-sm text-slate-800 leading-tight truncate">{product.name}</h3>
-                    <p className="text-xs text-slate-500 mt-0.5 truncate">{product.category}</p>
+                    <h3 className="font-bold text-[15px] text-slate-900 leading-tight line-clamp-2 break-words">{product.name}</h3>
+                    <p className="text-xs text-slate-500 mt-1 truncate">{product.category}</p>
                     {product.sku && <p className="text-xs text-slate-400 font-mono mt-0.5"><Hash className="inline mr-1" size={10}/>{product.sku}</p>}
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="font-black text-sm text-emerald-600 whitespace-nowrap">{product.price.toFixed(2)} ₼</p>
-                    <p className="text-[10px] text-slate-400 line-through whitespace-nowrap">{product.cost.toFixed(2)} ₼</p>
+                    <div className="mt-2 flex items-baseline gap-2 flex-wrap">
+                      <span className="font-black text-emerald-600 whitespace-nowrap">{product.price.toFixed(2)} ₼</span>
+                      <span className="text-[10px] text-slate-400 line-through whitespace-nowrap">{product.cost.toFixed(2)} ₼</span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex justify-between items-center gap-1.5 bg-slate-50 px-2 py-1.5 rounded-xl border border-slate-100">
-                  <span className={`text-[11px] font-bold whitespace-nowrap ${isLow ? 'text-red-600' : 'text-emerald-600'}`}>
+                <div className="flex justify-between items-center gap-2 bg-slate-50 px-3 py-2 rounded-xl border border-slate-100">
+                  <span className={`text-[11px] font-bold whitespace-nowrap px-2 py-1 rounded-lg ${isLow ? 'text-red-600 bg-red-50 border border-red-100' : 'text-emerald-600 bg-emerald-50 border border-emerald-100'}`}>
                     {isLow ? 'Kritik' : 'Stok'}: {product.stock} {product.unit}
                   </span>
 
@@ -734,14 +825,8 @@ const Inventory: React.FC<InventoryProps> = ({ products, categories, setCategori
                   <tr key={product.id} className="hover:bg-indigo-50/20 transition-colors group">
                     <td className="p-4 font-medium text-slate-800">
                       <div className="flex items-center gap-3">
-                          {product.imageUrl ? (
-                              <img src={product.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-slate-200 bg-white" />
-                          ) : (
-                              <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400">
-                                 <Package size={20} />
-                              </div>
-                          )}
-                          <div>
+                          <ProductImage product={product} variant="table" />
+                          <div className="min-w-0">
                              <span className="block font-bold text-slate-800">{product.name}</span>
                              {product.sku && <span className="text-xs text-slate-400 font-mono tracking-wider"><Hash className="inline mr-1" size={12}/>{product.sku}</span>}
                           </div>
@@ -827,15 +912,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, categories, setCategori
              return (
               <div key={product.id} className="p-4 bg-white space-y-3">
                  <div className="flex gap-3">
-                     {product.imageUrl ? (
-                        <div className="w-16 h-16 shrink-0 rounded-lg border border-slate-100 overflow-hidden bg-slate-50">
-                           <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
-                        </div>
-                     ) : (
-                        <div className="w-16 h-16 shrink-0 rounded-lg border border-slate-100 bg-slate-50 flex items-center justify-center text-slate-400">
-                          <Package size={24} />
-                        </div>
-                     )}
+                     <ProductImage product={product} variant="mobile" />
                      <div className="flex-1 min-w-0">
                          <div className="min-w-0">
                              <h3 className="font-bold text-slate-800 leading-tight line-clamp-2 break-words">{product.name}</h3>
