@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Package, LogIn, KeyRound } from 'lucide-react';
+import { LogIn, KeyRound } from 'lucide-react';
 import { User } from '../types';
 import { verifyPassword } from '../services/auth';
+import BrandLogo from './BrandLogo';
 
 interface LoginProps {
   users: User[];
@@ -42,11 +43,8 @@ const Login: React.FC<LoginProps> = ({ users, onLogin, showDefaultHint, defaultH
   return (
     <div className="min-h-[100dvh] bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-2xl shadow-lg shadow-blue-500/30 mb-4">
-            <Package size={32} className="text-white" />
-          </div>
-          <h1 className="text-3xl font-bold text-white">İnşaat<span className="text-blue-400">ERP</span></h1>
+        <div className="mb-8 flex flex-col items-center">
+          <BrandLogo size="lg" tone="light" showSubtitle />
           <p className="text-slate-400 mt-2">Tikinti materialları mağazası idarəetmə sistemi</p>
         </div>
 

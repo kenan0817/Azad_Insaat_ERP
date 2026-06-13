@@ -21,6 +21,7 @@ import Purchases from './components/Purchases';
 import PurchaseHistory from './components/PurchaseHistory';
 import Suppliers from './components/Suppliers';
 import Login from './components/Login';
+import BrandLogo from './components/BrandLogo';
 import { ToastManager, toast } from './components/Toast';
 import { generateId } from './utils/id';
 import { createDefaultAdmin, getDefaultCredentialsHint } from './services/auth';
@@ -608,10 +609,7 @@ const App: React.FC = () => {
     <div className="flex h-[100dvh] bg-slate-50 overflow-hidden font-sans">
       <aside className="hidden md:flex w-64 flex-col bg-white border-r border-slate-200 shadow-sm z-10 transition-all">
         <div className="p-6 border-b border-slate-100">
-          <div className="flex items-center gap-2 text-blue-700">
-            <Package size={28} className="fill-current" />
-            <span className="text-xl font-bold tracking-tight">İnşaat<span className="text-slate-800">ERP</span></span>
-          </div>
+          <BrandLogo size="md" showSubtitle />
           <p className="text-xs text-slate-500 mt-2 truncate">{currentUser.name}</p>
           <p className="text-xs text-blue-600 font-medium">{currentUser.role === 'MUDIR' ? 'Müdir' : 'Əməkdaş'}</p>
         </div>
@@ -646,10 +644,7 @@ const App: React.FC = () => {
         <ToastManager />
 
         <header className="md:hidden bg-white border-b border-slate-200 p-4 flex items-center justify-between z-20 sticky top-0 shadow-sm">
-          <div className="flex items-center gap-2 text-blue-700">
-            <Package size={24} />
-            <span className="font-bold text-lg">İnşaatERP</span>
-          </div>
+          <BrandLogo size="sm" />
           <button
             onClick={() => setIsMobileMenuOpen(true)}
             className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"

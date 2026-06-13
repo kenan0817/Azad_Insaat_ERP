@@ -47,7 +47,7 @@ export const INITIAL_CUSTOMERS: Customer[] = [
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   lowStockThreshold: 10,
   aiEnabled: false,
-  storeName: 'Azad İnşaat Materialları',
+  storeName: 'AzadInsaat',
   storePhone: '',
   storeAddress: '',
   largeSaleThreshold: 500,

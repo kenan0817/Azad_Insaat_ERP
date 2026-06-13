@@ -135,7 +135,7 @@ const SalesHistory: React.FC<SalesHistoryProps> = ({
   const handlePrint = (sale: Sale) => {
     const printContent = `
       <div style="font-family: Arial, sans-serif; width: 320px; padding: 18px;">
-        <h2 style="margin:0 0 6px; text-align:center;">Azad İnşaat</h2>
+        <h2 style="margin:0 0 6px; text-align:center;">AzadInsaat</h2>
         <p style="margin:4px 0; text-align:center;">Satış qaiməsi: <b>${saleNo(sale)}</b></p>
         <p style="margin:4px 0; text-align:center;">${new Date(sale.date).toLocaleString('az-AZ')}</p>
         <hr style="border-top:1px dashed #000; margin:12px 0;"/>
