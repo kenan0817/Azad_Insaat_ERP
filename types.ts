@@ -42,6 +42,18 @@ export interface PurchaseItem {
   cost: number;
 }
 
+export type PurchasePaymentMethod = 'NAGD' | 'KART' | 'BANK';
+export type PurchasePaymentStatus = 'UNPAID' | 'PARTIAL' | 'PAID';
+export type PurchaseStatus = 'CONFIRMED' | 'CANCELLED';
+
+export interface PurchasePayment {
+  id: string;
+  date: string;
+  amount: number;
+  method: PurchasePaymentMethod;
+  note?: string;
+}
+
 export interface Purchase {
   id: string;
   supplierId?: string;
@@ -50,8 +62,18 @@ export interface Purchase {
   supplierInvoiceNo?: string;
   note?: string;
   items: PurchaseItem[];
+  subtotal?: number;
+  discount?: number;
+  extraCost?: number;
+  tax?: number;
   totalCost: number;
-  paymentMethod: 'NAGD' | 'KART' | 'BORC';
+  paidAmount?: number;
+  remainingDebt?: number;
+  dueDate?: string;
+  paymentStatus?: PurchasePaymentStatus;
+  status?: PurchaseStatus;
+  payments?: PurchasePayment[];
+  paymentMethod: PurchasePaymentMethod | 'BORC';
 }
 
 export interface Customer {

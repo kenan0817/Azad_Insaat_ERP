@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { DebtLedgerEntry, InventoryMovement, Product, Supplier, Purchase, AuditAction } from '../types';
-import { Truck, Plus, Search, CheckCircle, Package } from 'lucide-react';
+import { DebtLedgerEntry, InventoryMovement, Product, Supplier, Purchase, AuditAction, PurchasePaymentMethod } from '../types';
+import { Truck, Plus, Search, CheckCircle, Package, CreditCard, CalendarClock } from 'lucide-react';
 import { generateId } from '../utils/id';
+import { getPurchasePaymentStatus, roundMoney } from '../utils/purchaseMath';
 import { toast } from './Toast';
 
 interface PurchasesProps {
@@ -22,7 +23,12 @@ const Purchases: React.FC<PurchasesProps> = ({ products, setProducts, suppliers,
   const [quantity, setQuantity] = useState('');
   const [cost, setCost] = useState('');
   const [selectedSupplierId, setSelectedSupplierId] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'NAGD' | 'KART' | 'BORC'>('NAGD');
+  const [paymentMethod, setPaymentMethod] = useState<PurchasePaymentMethod>('NAGD');
+  const [paidAmount, setPaidAmount] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [discount, setDiscount] = useState('');
+  const [extraCost, setExtraCost] = useState('');
+  const [tax, setTax] = useState('');
   const [invoiceNo, setInvoiceNo] = useState('');
   const [supplierInvoiceNo, setSupplierInvoiceNo] = useState('');
   const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().slice(0, 10));
@@ -33,6 +39,31 @@ const Purchases: React.FC<PurchasesProps> = ({ products, setProducts, suppliers,
   const [newSupplierPhone, setNewSupplierPhone] = useState('');
 
   const filteredProducts = products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  const parseMoney = (value: string) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const subtotal = roundMoney(cart.reduce((sum, item) => sum + (item.quantity * item.cost), 0));
+  const discountAmount = roundMoney(Math.max(0, parseMoney(discount)));
+  const extraCostAmount = roundMoney(Math.max(0, parseMoney(extraCost)));
+  const taxAmount = roundMoney(Math.max(0, parseMoney(tax)));
+  const totalCost = roundMoney(Math.max(0, subtotal - discountAmount + extraCostAmount + taxAmount));
+  const paidNow = roundMoney(Math.max(0, parseMoney(paidAmount)));
+  const remainingDebt = roundMoney(Math.max(0, totalCost - Math.min(paidNow, totalCost)));
+  const paymentPreview = getPurchasePaymentStatus({
+    id: 'preview',
+    date: new Date().toISOString(),
+    items: cart.map((item) => ({
+      productId: item.product.id,
+      name: item.product.name,
+      quantity: item.quantity,
+      cost: item.cost,
+    })),
+    totalCost,
+    paidAmount: Math.min(paidNow, totalCost),
+    remainingDebt,
+    paymentMethod: remainingDebt > 0 && paidNow === 0 ? 'BORC' : paymentMethod,
+  });
 
   const handleAddSupplier = () => {
     if (!newSupplierName) return;
@@ -86,17 +117,36 @@ const Purchases: React.FC<PurchasesProps> = ({ products, setProducts, suppliers,
 
   const handleCheckout = () => {
     if (cart.length === 0) return;
-    if (paymentMethod === 'BORC' && !selectedSupplierId) {
-      toast.error('Borca mədaxil üçün təchizatçı seçilməlidir!');
+    if (paidNow > totalCost) {
+      toast.error('Ödənilən məbləğ yekun məbləğdən çox ola bilməz');
+      return;
+    }
+    if (remainingDebt > 0 && !selectedSupplierId) {
+      toast.error('Qalıq borc yaranırsa təchizatçı seçilməlidir!');
+      return;
+    }
+    if (totalCost <= 0) {
+      toast.error('Yekun məbləğ sıfırdan böyük olmalıdır');
       return;
     }
 
-    const totalCost = cart.reduce((sum, item) => sum + (item.quantity * item.cost), 0);
+    const paidAmountApplied = Math.min(paidNow, totalCost);
+    const paymentStatus = paidAmountApplied >= totalCost ? 'PAID' : paidAmountApplied > 0 ? 'PARTIAL' : 'UNPAID';
+    const purchaseDateIso = purchaseDate ? new Date(`${purchaseDate}T12:00:00`).toISOString() : new Date().toISOString();
+    const payments = paidAmountApplied > 0
+      ? [{
+          id: generateId(),
+          date: purchaseDateIso,
+          amount: paidAmountApplied,
+          method: paymentMethod,
+          note: 'İlkin ödəniş',
+        }]
+      : [];
 
     const newPurchase: Purchase = {
       id: generateId(),
       supplierId: selectedSupplierId || undefined,
-      date: purchaseDate ? new Date(`${purchaseDate}T12:00:00`).toISOString() : new Date().toISOString(),
+      date: purchaseDateIso,
       invoiceNo: invoiceNo.trim() || undefined,
       supplierInvoiceNo: supplierInvoiceNo.trim() || undefined,
       note: purchaseNote.trim() || undefined,
@@ -106,8 +156,18 @@ const Purchases: React.FC<PurchasesProps> = ({ products, setProducts, suppliers,
         quantity: c.quantity,
         cost: c.cost
       })),
+      subtotal,
+      discount: discountAmount,
+      extraCost: extraCostAmount,
+      tax: taxAmount,
       totalCost,
-      paymentMethod
+      paidAmount: paidAmountApplied,
+      remainingDebt,
+      dueDate: dueDate ? new Date(`${dueDate}T12:00:00`).toISOString() : undefined,
+      paymentStatus,
+      status: 'CONFIRMED',
+      payments,
+      paymentMethod: remainingDebt > 0 && paidAmountApplied === 0 ? 'BORC' : paymentMethod
     };
 
     const movementEntries: Omit<InventoryMovement, 'id' | 'date' | 'userName'>[] = cart.map((item) => ({
@@ -134,28 +194,33 @@ const Purchases: React.FC<PurchasesProps> = ({ products, setProducts, suppliers,
     }));
     movementEntries.forEach((entry) => addInventoryMovement?.(entry));
 
-    if (paymentMethod === 'BORC' && selectedSupplierId) {
+    if (remainingDebt > 0 && selectedSupplierId) {
        const supplier = suppliers.find((s) => s.id === selectedSupplierId);
-       const balanceAfter = (supplier?.debt || 0) + totalCost;
-       setSuppliers(prev => prev.map(s => s.id === selectedSupplierId ? { ...s, debt: s.debt + totalCost } : s));
+       const balanceAfter = (supplier?.debt || 0) + remainingDebt;
+       setSuppliers(prev => prev.map(s => s.id === selectedSupplierId ? { ...s, debt: s.debt + remainingDebt } : s));
        addDebtEntry?.({
          entityType: 'SUPPLIER',
          entityId: selectedSupplierId,
          type: 'PURCHASE',
          direction: 'INCREASE',
-         amount: totalCost,
+         amount: remainingDebt,
          balanceAfter,
          refId: newPurchase.id,
-         note: `Borca mədaxil ${newPurchase.invoiceNo || `#${newPurchase.id.slice(0, 8)}`}`,
+         note: `Mədaxil qalıq borcu ${newPurchase.invoiceNo || `#${newPurchase.id.slice(0, 8)}`}`,
        });
     }
 
     setPurchases(prev => [...prev, newPurchase]);
-    addLog(AuditAction.UPDATE, `Mədaxil #${newPurchase.id.slice(0,6)} tamamlandı. Cəmi xərc: ${totalCost} ₼. İşçi məhsullar anbara əlavə edildi.`);
+    addLog(AuditAction.UPDATE, `Mədaxil #${newPurchase.id.slice(0,6)} tamamlandı. Yekun: ${totalCost} ₼, ödənildi: ${paidAmountApplied} ₼, qalıq: ${remainingDebt} ₼.`);
 
     setCart([]);
     setSelectedSupplierId('');
     setPaymentMethod('NAGD');
+    setPaidAmount('');
+    setDueDate('');
+    setDiscount('');
+    setExtraCost('');
+    setTax('');
     setInvoiceNo('');
     setSupplierInvoiceNo('');
     setPurchaseNote('');
@@ -215,7 +280,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, setProducts, suppliers,
             </div>
          </div>
 
-         <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden max-h-[600px]">
+         <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
             <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
               <h3 className="font-bold text-slate-800 flex items-center gap-2"><Package size={18} className="text-indigo-500" /> Qaimə Siyahısı ({cart.length})</h3>
             </div>
@@ -237,9 +302,19 @@ const Purchases: React.FC<PurchasesProps> = ({ products, setProducts, suppliers,
             </div>
 
             <div className="p-4 border-t border-slate-200 bg-slate-50 space-y-4 shrink-0">
-               <div className="flex items-center justify-between">
-                  <span className="font-medium text-slate-600">Yekun Xərc:</span>
-                  <span className="text-2xl font-bold text-slate-900">{cart.reduce((s, i) => s + (i.quantity * i.cost), 0).toFixed(2)} ₼</span>
+               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="bg-white border border-slate-200 rounded-lg p-3">
+                    <span className="text-xs font-semibold text-slate-500 uppercase">Yekun</span>
+                    <p className="text-xl font-bold text-slate-900">{totalCost.toFixed(2)} ₼</p>
+                  </div>
+                  <div className="bg-white border border-slate-200 rounded-lg p-3">
+                    <span className="text-xs font-semibold text-slate-500 uppercase">Ödənildi</span>
+                    <p className="text-xl font-bold text-emerald-700">{Math.min(paidNow, totalCost).toFixed(2)} ₼</p>
+                  </div>
+                  <div className="bg-white border border-slate-200 rounded-lg p-3">
+                    <span className="text-xs font-semibold text-slate-500 uppercase">Qalıq borc</span>
+                    <p className={`text-xl font-bold ${remainingDebt > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>{remainingDebt.toFixed(2)} ₼</p>
+                  </div>
                </div>
 
                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -269,12 +344,44 @@ const Purchases: React.FC<PurchasesProps> = ({ products, setProducts, suppliers,
                     </select>
                  </div>
                  <div>
-                    <label className="text-xs font-semibold text-slate-500 uppercase">Ödəniş Üsulu</label>
-                    <select className="w-full border border-slate-300 p-2 rounded text-sm outline-none bg-white font-medium" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value as any)}>
-                      <option value="NAGD">Kasadan Nəğd</option>
-                      <option value="KART">Kartdan Köçürmə</option>
-                      <option value="BORC">Borca Yaz (Nisyə)</option>
+                    <label className="text-xs font-semibold text-slate-500 uppercase">İlkin ödəniş üsulu</label>
+                    <select className="w-full border border-slate-300 p-2 rounded text-sm outline-none bg-white font-medium" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value as PurchasePaymentMethod)}>
+                      <option value="NAGD">Nağd</option>
+                      <option value="KART">Kart</option>
+                      <option value="BANK">Bank köçürməsi</option>
                     </select>
+                 </div>
+               </div>
+
+               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                 <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Endirim</label>
+                    <input type="number" min="0" className="w-full border border-slate-300 p-2 rounded text-sm outline-none bg-white" value={discount} onChange={e => setDiscount(e.target.value)} placeholder="0.00" />
+                 </div>
+                 <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Əlavə xərc</label>
+                    <input type="number" min="0" className="w-full border border-slate-300 p-2 rounded text-sm outline-none bg-white" value={extraCost} onChange={e => setExtraCost(e.target.value)} placeholder="Daşıma, boşaltma..." />
+                 </div>
+                 <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase">ƏDV / vergi</label>
+                    <input type="number" min="0" className="w-full border border-slate-300 p-2 rounded text-sm outline-none bg-white" value={tax} onChange={e => setTax(e.target.value)} placeholder="0.00" />
+                 </div>
+               </div>
+
+               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                 <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase flex items-center gap-1"><CreditCard size={14} /> İndi ödənilən</label>
+                    <input type="number" min="0" className="w-full border border-slate-300 p-2 rounded text-sm outline-none bg-white" value={paidAmount} onChange={e => setPaidAmount(e.target.value)} placeholder="0.00" />
+                 </div>
+                 <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase flex items-center gap-1"><CalendarClock size={14} /> Son ödəmə</label>
+                    <input type="date" className="w-full border border-slate-300 p-2 rounded text-sm outline-none bg-white" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+                 </div>
+                 <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Status</label>
+                    <p className={`text-sm font-bold ${paymentPreview === 'PAID' ? 'text-emerald-700' : paymentPreview === 'PARTIAL' ? 'text-amber-700' : 'text-rose-700'}`}>
+                      {paymentPreview === 'PAID' ? 'Tam ödənilib' : paymentPreview === 'PARTIAL' ? 'Qismən ödənilib' : 'Ödənilməyib'}
+                    </p>
                  </div>
                </div>
 

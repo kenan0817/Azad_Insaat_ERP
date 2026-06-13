@@ -1,24 +1,28 @@
 import React, { useState } from 'react';
-import { Supplier, AuditAction, DebtLedgerEntry } from '../types';
+import { Supplier, AuditAction, DebtLedgerEntry, Purchase, PurchasePaymentMethod } from '../types';
 import { Truck, Plus, Search, Phone, CreditCard, Edit, Trash2, X } from 'lucide-react';
 import { generateId } from '../utils/id';
+import { getPurchasePaidAmount, getPurchaseRemainingDebt, getPurchaseTotal, roundMoney } from '../utils/purchaseMath';
 import ConfirmModal from './ConfirmModal';
 import { toast } from './Toast';
 
 interface SuppliersProps {
   suppliers: Supplier[];
   setSuppliers: React.Dispatch<React.SetStateAction<Supplier[]>>;
+  purchases?: Purchase[];
+  setPurchases?: React.Dispatch<React.SetStateAction<Purchase[]>>;
   addLog: (action: AuditAction, details: string) => void;
   debtLedger?: DebtLedgerEntry[];
   addDebtEntry?: (entry: Omit<DebtLedgerEntry, 'id' | 'date' | 'userName'>) => void;
 }
 
-const Suppliers: React.FC<SuppliersProps> = ({ suppliers, setSuppliers, addLog, debtLedger = [], addDebtEntry }) => {
+const Suppliers: React.FC<SuppliersProps> = ({ suppliers, setSuppliers, purchases = [], setPurchases, addLog, debtLedger = [], addDebtEntry }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<Supplier>>({});
   const [payingDebtFor, setPayingDebtFor] = useState<string | null>(null);
   const [debtAmount, setDebtAmount] = useState('');
+  const [debtPaymentMethod, setDebtPaymentMethod] = useState<PurchasePaymentMethod>('NAGD');
   const [deleteTarget, setDeleteTarget] = useState<Supplier | null>(null);
 
   const filtered = suppliers.filter(
@@ -52,20 +56,67 @@ const Suppliers: React.FC<SuppliersProps> = ({ suppliers, setSuppliers, addLog, 
     setFormData({});
   };
 
+  const allocatePaymentToPurchases = (supplierId: string, amount: number, method: PurchasePaymentMethod) => {
+    if (!setPurchases) return [];
+
+    let remainingPayment = amount;
+    const allocations = purchases
+      .filter((purchase) => purchase.supplierId === supplierId && getPurchaseRemainingDebt(purchase) > 0)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .map((purchase) => {
+        const applied = roundMoney(Math.min(remainingPayment, getPurchaseRemainingDebt(purchase)));
+        remainingPayment = roundMoney(remainingPayment - applied);
+        return applied > 0 ? { purchaseId: purchase.id, amount: applied } : null;
+      })
+      .filter((allocation): allocation is { purchaseId: string; amount: number } => Boolean(allocation));
+
+    if (allocations.length === 0) return allocations;
+
+    setPurchases((prev) =>
+      prev.map((purchase) => {
+        const allocation = allocations.find((item) => item.purchaseId === purchase.id);
+        if (!allocation) return purchase;
+        const payments = [
+          ...(purchase.payments || []),
+          {
+            id: generateId(),
+            date: new Date().toISOString(),
+            amount: allocation.amount,
+            method,
+            note: 'Təchizatçı kartından ödəniş',
+          },
+        ];
+        const paidAmount = roundMoney(getPurchasePaidAmount(purchase) + allocation.amount);
+        const remainingDebt = roundMoney(Math.max(0, getPurchaseTotal(purchase) - paidAmount));
+        return {
+          ...purchase,
+          payments,
+          paidAmount,
+          remainingDebt,
+          paymentStatus: remainingDebt <= 0 ? 'PAID' : 'PARTIAL',
+          paymentMethod: remainingDebt > 0 && paidAmount === 0 ? 'BORC' : method,
+        };
+      })
+    );
+
+    return allocations;
+  };
+
   const handlePayDebt = (id: string, currentDebt: number) => {
-    const amount = parseFloat(debtAmount);
+    const amount = roundMoney(parseFloat(debtAmount));
     if (!amount || amount <= 0 || amount > currentDebt) {
       toast.error('Düzgün məbləğ daxil edin');
       return;
     }
 
+    const allocations = allocatePaymentToPurchases(id, amount, debtPaymentMethod);
     setSuppliers((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, debt: s.debt - amount } : s))
+      prev.map((s) => (s.id === id ? { ...s, debt: roundMoney(s.debt - amount) } : s))
     );
 
     const supplier = suppliers.find((s) => s.id === id);
     if (supplier) {
-      const balanceAfter = currentDebt - amount;
+      const balanceAfter = roundMoney(currentDebt - amount);
       addDebtEntry?.({
         entityType: 'SUPPLIER',
         entityId: id,
@@ -73,7 +124,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ suppliers, setSuppliers, addLog, 
         direction: 'DECREASE',
         amount,
         balanceAfter,
-        note: `Təchizatçı borc ödənişi: ${supplier.name}`,
+        note: `Təchizatçı borc ödənişi: ${supplier.name}${allocations.length ? ` (${allocations.length} alışa paylandı)` : ''}`,
       });
       addLog(
         AuditAction.UPDATE,
@@ -83,6 +134,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ suppliers, setSuppliers, addLog, 
 
     setPayingDebtFor(null);
     setDebtAmount('');
+    setDebtPaymentMethod('NAGD');
     toast.success('Borc ödənişi qeydə alındı');
   };
 
@@ -189,6 +241,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ suppliers, setSuppliers, addLog, 
                   onClick={() => {
                     setPayingDebtFor(supplier.id);
                     setDebtAmount('');
+                    setDebtPaymentMethod('NAGD');
                   }}
                   className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-lg flex items-center gap-1"
                 >
@@ -197,7 +250,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ suppliers, setSuppliers, addLog, 
               )}
 
               {payingDebtFor === supplier.id && (
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-end gap-2">
                   <input
                     type="number"
                     value={debtAmount}
@@ -205,6 +258,15 @@ const Suppliers: React.FC<SuppliersProps> = ({ suppliers, setSuppliers, addLog, 
                     placeholder="Məbləğ"
                     className="w-24 px-2 py-1.5 border border-slate-300 rounded text-sm"
                   />
+                  <select
+                    value={debtPaymentMethod}
+                    onChange={(e) => setDebtPaymentMethod(e.target.value as PurchasePaymentMethod)}
+                    className="w-24 px-2 py-1.5 border border-slate-300 rounded text-sm bg-white"
+                  >
+                    <option value="NAGD">Nağd</option>
+                    <option value="KART">Kart</option>
+                    <option value="BANK">Bank</option>
+                  </select>
                   <button
                     onClick={() => handlePayDebt(supplier.id, supplier.debt)}
                     className="bg-emerald-600 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-emerald-700"

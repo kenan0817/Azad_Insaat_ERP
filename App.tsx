@@ -485,12 +485,23 @@ const App: React.FC = () => {
           />
         );
       case Tab.PURCHASE_HISTORY:
-        return <PurchaseHistory purchases={purchases} suppliers={suppliers} />;
+        return (
+          <PurchaseHistory
+            purchases={purchases}
+            setPurchases={setPurchases}
+            suppliers={suppliers}
+            setSuppliers={setSuppliers}
+            addDebtEntry={addDebtEntry}
+            addLog={addLog}
+          />
+        );
       case Tab.SUPPLIERS:
         return (
           <Suppliers
             suppliers={suppliers}
             setSuppliers={setSuppliers}
+            purchases={purchases}
+            setPurchases={setPurchases}
             addLog={addLog}
             debtLedger={debtLedger}
             addDebtEntry={addDebtEntry}
