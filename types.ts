@@ -17,7 +17,7 @@ export interface Product {
   stock: number;
   unit: string; // ədəd, kq, metr, və s.
   imageUrl?: string;
-  sku?: string; // Barkod / SKU
+  sku?: string; // Daxili məhsul kodu
 }
 
 export interface Expense {
@@ -46,6 +46,9 @@ export interface Purchase {
   id: string;
   supplierId?: string;
   date: string;
+  invoiceNo?: string;
+  supplierInvoiceNo?: string;
+  note?: string;
   items: PurchaseItem[];
   totalCost: number;
   paymentMethod: 'NAGD' | 'KART' | 'BORC';
@@ -64,6 +67,24 @@ export interface CartItem extends Product {
   quantity: number;
 }
 
+export interface SaleRefundItem {
+  productId: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  price: number;
+  cost: number;
+}
+
+export interface SaleRefund {
+  id: string;
+  date: string;
+  items: SaleRefundItem[];
+  total: number;
+  reason?: string;
+  cashierName?: string;
+}
+
 export interface Sale {
   id: string;
   date: string; // ISO string
@@ -73,7 +94,11 @@ export interface Sale {
   discount?: number;
   customerId?: string;
   paymentMethod?: 'NAGD' | 'KART' | 'BORC';
-  status?: 'COMPLETED' | 'REFUNDED';
+  status?: 'COMPLETED' | 'PARTIALLY_REFUNDED' | 'REFUNDED';
+  refunds?: SaleRefund[];
+  refundedTotal?: number;
+  note?: string;
+  cashierName?: string;
 }
 
 export interface DashboardStats {
@@ -93,9 +118,65 @@ export enum AuditAction {
   REFUND = 'REFUND'
 }
 
+export type UserRole = 'MUDIR' | 'EMEKDAS';
+
+export interface User {
+  id: string;
+  username: string;
+  passwordHash: string;
+  role: UserRole;
+  name: string;
+  mustChangePassword?: boolean;
+}
+
+export interface AppSettings {
+  lowStockThreshold: number;
+  aiEnabled: boolean;
+  storeName: string;
+  storePhone: string;
+  storeAddress: string;
+  largeSaleThreshold: number;
+}
+
 export interface AuditLogEntry {
   id: string;
   date: string;
   action: AuditAction;
   details: string;
+  userId?: string;
+  userName?: string;
+}
+
+export type DebtEntityType = 'CUSTOMER' | 'SUPPLIER';
+export type DebtEntryType = 'SALE' | 'PURCHASE' | 'PAYMENT' | 'REFUND' | 'ADJUSTMENT';
+export type DebtDirection = 'INCREASE' | 'DECREASE';
+
+export interface DebtLedgerEntry {
+  id: string;
+  date: string;
+  entityType: DebtEntityType;
+  entityId: string;
+  type: DebtEntryType;
+  direction: DebtDirection;
+  amount: number;
+  balanceAfter: number;
+  note?: string;
+  refId?: string;
+  userName?: string;
+}
+
+export type InventoryMovementType = 'SALE' | 'PURCHASE' | 'REFUND' | 'ADJUSTMENT' | 'LOSS';
+
+export interface InventoryMovement {
+  id: string;
+  date: string;
+  productId: string;
+  productName: string;
+  type: InventoryMovementType;
+  quantityChange: number;
+  stockAfter: number;
+  unit: string;
+  note?: string;
+  refId?: string;
+  userName?: string;
 }

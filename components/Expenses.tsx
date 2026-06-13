@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Expense, AuditAction } from '../types';
 import { Wallet, Plus, Search, Trash2, Edit, X } from 'lucide-react';
+import { generateId } from '../utils/id';
+import ConfirmModal from './ConfirmModal';
 
 interface ExpensesProps {
   expenses: Expense[];
@@ -14,6 +16,7 @@ const Expenses: React.FC<ExpensesProps> = ({ expenses, setExpenses, addLog }) =>
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<Expense>>({ category: EXPENSE_CATEGORIES[0] });
+  const [deleteTarget, setDeleteTarget] = useState<Expense | null>(null);
 
   const filteredExpenses = expenses
     .filter(e => e.title.toLowerCase().includes(searchTerm.toLowerCase()) || e.category.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -29,7 +32,7 @@ const Expenses: React.FC<ExpensesProps> = ({ expenses, setExpenses, addLog }) =>
     } else {
       // Add
       const newExpense: Expense = {
-        id: Date.now().toString(),
+        id: generateId(),
         title: formData.title,
         amount: Number(formData.amount),
         category: formData.category,
@@ -42,11 +45,8 @@ const Expenses: React.FC<ExpensesProps> = ({ expenses, setExpenses, addLog }) =>
     setFormData({ category: EXPENSE_CATEGORIES[0] });
   };
 
-  const handleDeleteExpense = (id: string, title: string) => {
-     if(confirm(`Əminsiniz ki, bu xərci silmək istəyirsiniz: ${title}?`)) {
-       setExpenses(prev => prev.filter(e => e.id !== id));
-       addLog(AuditAction.DELETE, `Xərc silindi: ${title}`);
-     }
+  const handleDeleteExpense = (expense: Expense) => {
+    setDeleteTarget(expense);
   };
 
   const totalExpenses = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
@@ -120,7 +120,7 @@ const Expenses: React.FC<ExpensesProps> = ({ expenses, setExpenses, addLog }) =>
                        <button onClick={() => { setFormData(expense); setIsModalOpen(true); }} className="p-1.5 text-slate-400 hover:text-blue-600 bg-white border border-slate-200 hover:border-blue-200 rounded-lg shadow-sm transition-colors">
                          <Edit size={16} />
                        </button>
-                       <button onClick={() => handleDeleteExpense(expense.id, expense.title)} className="p-1.5 text-slate-400 hover:text-rose-600 bg-white border border-slate-200 hover:border-rose-200 rounded-lg shadow-sm transition-colors">
+                       <button onClick={() => handleDeleteExpense(expense)} className="p-1.5 text-slate-400 hover:text-rose-600 bg-white border border-slate-200 hover:border-rose-200 rounded-lg shadow-sm transition-colors">
                          <Trash2 size={16} />
                        </button>
                      </div>
@@ -205,6 +205,21 @@ const Expenses: React.FC<ExpensesProps> = ({ expenses, setExpenses, addLog }) =>
             </div>
           </div>
         </div>
+      )}
+
+      {deleteTarget && (
+        <ConfirmModal
+          title="Xərci sil"
+          message={`Əminsiniz ki, "${deleteTarget.title}" silinsin?`}
+          confirmLabel="Sil"
+          variant="danger"
+          onConfirm={() => {
+            setExpenses((prev) => prev.filter((e) => e.id !== deleteTarget.id));
+            addLog(AuditAction.DELETE, `Xərc silindi: ${deleteTarget.title}`);
+            setDeleteTarget(null);
+          }}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
     </div>
   );

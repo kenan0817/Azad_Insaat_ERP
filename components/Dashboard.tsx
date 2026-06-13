@@ -1,11 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { DashboardStats, Sale } from '../types';
-import { TrendingUp, AlertTriangle, Package, DollarSign, Calendar, Star } from 'lucide-react';
+import { DashboardStats, Sale, Expense } from '../types';
+import { TrendingUp, AlertTriangle, Package, DollarSign, Calendar, Star, Wallet } from 'lucide-react';
+import { getSaleNetProfit, getSaleNetTotal } from '../utils/erpMath';
 
 interface DashboardProps {
   stats: DashboardStats;
   sales: Sale[];
+  expenses: Expense[];
 }
 
 const StatCard: React.FC<{ title: string; value: string; subtitle?: string; icon: React.ReactNode; color: string }> = ({ title, value, subtitle, icon, color }) => (
@@ -21,35 +23,42 @@ const StatCard: React.FC<{ title: string; value: string; subtitle?: string; icon
   </div>
 );
 
-const Dashboard: React.FC<DashboardProps> = ({ stats, sales }) => {
+const Dashboard: React.FC<DashboardProps> = ({ stats, sales, expenses }) => {
   const [sortOrder, setSortOrder] = useState<'date' | 'amount-desc' | 'amount-asc'>('date');
   const [dateRange, setDateRange] = useState<'today' | 'week' | 'month' | 'all'>('today');
 
+  const isInSelectedDateRange = (date: string) => {
+    const now = new Date();
+    const d = new Date(date);
+    if (dateRange === 'today') return d.toDateString() === now.toDateString();
+    if (dateRange === 'week') {
+      const weekAgo = new Date();
+      weekAgo.setDate(now.getDate() - 7);
+      return d >= weekAgo;
+    }
+    if (dateRange === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    return true;
+  };
+
   // Filter sales completely by selected date range
   const filteredSales = useMemo(() => {
-    const now = new Date();
-    return sales.filter(s => {
-      const d = new Date(s.date);
-      if (dateRange === 'today') {
-        return d.toDateString() === now.toDateString();
-      }
-      if (dateRange === 'week') {
-        const weekAgo = new Date();
-        weekAgo.setDate(now.getDate() - 7);
-        return d >= weekAgo;
-      }
-      if (dateRange === 'month') {
-        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-      }
-      return true;
-    });
+    return sales.filter(s => s.status !== 'REFUNDED' && isInSelectedDateRange(s.date));
   }, [sales, dateRange]);
+
+  const filteredExpenses = useMemo(() => {
+    return expenses.filter((expense) => isInSelectedDateRange(expense.date));
+  }, [expenses, dateRange]);
+
+  const filteredExpenseTotal = useMemo(
+    () => filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0),
+    [filteredExpenses]
+  );
 
   // Compute Global Stats Based on Filtered Sales
   const filteredStats = useMemo(() => {
     return {
-      revenue: filteredSales.reduce((acc, s) => acc + s.total, 0),
-      profit: filteredSales.reduce((acc, s) => acc + s.profit, 0),
+      revenue: filteredSales.reduce((acc, s) => acc + getSaleNetTotal(s), 0),
+      profit: filteredSales.reduce((acc, s) => acc + getSaleNetProfit(s), 0),
       count: filteredSales.length
     }
   }, [filteredSales]);
@@ -59,8 +68,8 @@ const Dashboard: React.FC<DashboardProps> = ({ stats, sales }) => {
     const today = new Date().toISOString().split('T')[0];
     const todaysSales = sales.filter(s => s.date.startsWith(today) && s.status !== 'REFUNDED');
     return {
-      todayRevenue: todaysSales.reduce((acc, s) => acc + s.total, 0),
-      todayProfit: todaysSales.reduce((acc, s) => acc + s.profit, 0),
+      todayRevenue: todaysSales.reduce((acc, s) => acc + getSaleNetTotal(s), 0),
+      todayProfit: todaysSales.reduce((acc, s) => acc + getSaleNetProfit(s), 0),
       todayCount: todaysSales.length
     };
   }, [sales]);
@@ -81,7 +90,7 @@ const Dashboard: React.FC<DashboardProps> = ({ stats, sales }) => {
   const paymentMethodsData = useMemo(() => {
     const counts = filteredSales.reduce((acc, s) => {
       const pm = s.paymentMethod || 'NAGD';
-      acc[pm] = (acc[pm] || 0) + s.total;
+      acc[pm] = (acc[pm] || 0) + getSaleNetTotal(s);
       return acc;
     }, {} as Record<string, number>);
     
@@ -95,17 +104,17 @@ const Dashboard: React.FC<DashboardProps> = ({ stats, sales }) => {
   // Prepare chart data (Last 10 sales from filtered list)
   const chartData = filteredSales.slice(-10).map((s) => ({
     name: `#${s.id.slice(0, 4)}`,
-    amount: s.total,
-    profit: s.profit
+    amount: getSaleNetTotal(s),
+    profit: getSaleNetProfit(s)
   }));
 
   const getDisplayedSales = () => {
     const data = [...filteredSales];
     switch (sortOrder) {
       case 'amount-desc':
-        return data.sort((a, b) => b.total - a.total).slice(0, 5);
+        return data.sort((a, b) => getSaleNetTotal(b) - getSaleNetTotal(a)).slice(0, 5);
       case 'amount-asc':
-        return data.sort((a, b) => a.total - b.total).slice(0, 5);
+        return data.sort((a, b) => getSaleNetTotal(a) - getSaleNetTotal(b)).slice(0, 5);
       case 'date':
       default:
         return data.slice(-5).reverse();
@@ -126,7 +135,7 @@ const Dashboard: React.FC<DashboardProps> = ({ stats, sales }) => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 md:gap-6">
         <StatCard 
           title="Ümumi Gəlir" 
           value={`${filteredStats.revenue.toFixed(2)} ₼`} 
@@ -140,6 +149,13 @@ const Dashboard: React.FC<DashboardProps> = ({ stats, sales }) => {
           subtitle={dateRange !== 'today' ? `Bugün: +${todayProfit.toFixed(2)} ₼` : undefined}
           icon={<DollarSign size={24} />} 
           color="bg-blue-500" 
+        />
+        <StatCard 
+          title="Ümumi Xərclər" 
+          value={`${filteredExpenseTotal.toFixed(2)} ₼`} 
+          subtitle={`${filteredExpenses.length} xərc qeydi`}
+          icon={<Wallet size={24} />} 
+          color="bg-rose-500" 
         />
         <StatCard 
           title="Satış Sayı" 
@@ -244,7 +260,7 @@ const Dashboard: React.FC<DashboardProps> = ({ stats, sales }) => {
             {displayedSales.map((sale) => (
               <div key={sale.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors border border-slate-100/50 group">
                 <div>
-                  <p className="text-sm font-bold text-slate-800">Çek #{sale.id.slice(0,6)}</p>
+                  <p className="text-sm font-bold text-slate-800">Qaimə #{sale.id.slice(0,6)}</p>
                   <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
                     {new Date(sale.date).toLocaleDateString('az-AZ')} {new Date(sale.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                     <span className="inline-block w-1 h-1 rounded-full bg-slate-300 mx-1"></span>
@@ -252,7 +268,7 @@ const Dashboard: React.FC<DashboardProps> = ({ stats, sales }) => {
                   </p>
                 </div>
                 <div className="text-right">
-                  <span className="block font-bold text-emerald-600 group-hover:scale-105 transition-transform origin-right">+{sale.total.toFixed(2)} ₼</span>
+                  <span className="block font-bold text-emerald-600 group-hover:scale-105 transition-transform origin-right">+{getSaleNetTotal(sale).toFixed(2)} ₼</span>
                   <span className="block text-xs text-slate-400 mt-1">{sale.items.length} məhsul</span>
                 </div>
               </div>

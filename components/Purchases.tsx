@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { Product, Supplier, Purchase, AuditAction } from '../types';
+import { DebtLedgerEntry, InventoryMovement, Product, Supplier, Purchase, AuditAction } from '../types';
 import { Truck, Plus, Search, CheckCircle, Package } from 'lucide-react';
+import { generateId } from '../utils/id';
+import { toast } from './Toast';
 
 interface PurchasesProps {
   products: Product[];
@@ -10,15 +12,21 @@ interface PurchasesProps {
   purchases: Purchase[];
   setPurchases: React.Dispatch<React.SetStateAction<Purchase[]>>;
   addLog: (action: AuditAction, details: string) => void;
+  addDebtEntry?: (entry: Omit<DebtLedgerEntry, 'id' | 'date' | 'userName'>) => void;
+  addInventoryMovement?: (entry: Omit<InventoryMovement, 'id' | 'date' | 'userName'>) => void;
 }
 
-const Purchases: React.FC<PurchasesProps> = ({ products, setProducts, suppliers, setSuppliers, purchases, setPurchases, addLog }) => {
+const Purchases: React.FC<PurchasesProps> = ({ products, setProducts, suppliers, setSuppliers, purchases, setPurchases, addLog, addDebtEntry, addInventoryMovement }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedProductId, setSelectedProductId] = useState('');
   const [quantity, setQuantity] = useState('');
   const [cost, setCost] = useState('');
   const [selectedSupplierId, setSelectedSupplierId] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'NAGD' | 'KART' | 'BORC'>('NAGD');
+  const [invoiceNo, setInvoiceNo] = useState('');
+  const [supplierInvoiceNo, setSupplierInvoiceNo] = useState('');
+  const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().slice(0, 10));
+  const [purchaseNote, setPurchaseNote] = useState('');
   const [cart, setCart] = useState<{product: Product, quantity: number, cost: number}[]>([]);
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState('');
@@ -29,7 +37,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, setProducts, suppliers,
   const handleAddSupplier = () => {
     if (!newSupplierName) return;
     const ns: Supplier = {
-      id: Date.now().toString(),
+      id: generateId(),
       name: newSupplierName,
       phone: newSupplierPhone,
       debt: 0
@@ -45,12 +53,27 @@ const Purchases: React.FC<PurchasesProps> = ({ products, setProducts, suppliers,
     if (!selectedProductId || !quantity || !cost) return;
     const prod = products.find(p => p.id === selectedProductId);
     if (!prod) return;
+    const qty = Number(quantity);
+    const unitCost = Number(cost);
+    if (qty <= 0 || unitCost < 0) {
+      toast.error('Düzgün say və alış qiyməti daxil edin');
+      return;
+    }
+    if (prod.cost > 0 && unitCost > prod.cost * 1.15) {
+      toast.info(`Alış qiyməti əvvəlki mayadan yüksəkdir: ${prod.cost.toFixed(2)} ₼ -> ${unitCost.toFixed(2)} ₼`);
+    }
 
-    setCart(prev => [...prev, {
-      product: prod,
-      quantity: Number(quantity),
-      cost: Number(cost)
-    }]);
+    setCart(prev => {
+      const existing = prev.find((item) => item.product.id === prod.id);
+      if (!existing) {
+        return [...prev, { product: prod, quantity: qty, cost: unitCost }];
+      }
+      return prev.map((item) =>
+        item.product.id === prod.id
+          ? { ...item, quantity: item.quantity + qty, cost: unitCost }
+          : item
+      );
+    });
 
     setSelectedProductId('');
     setQuantity('');
@@ -64,16 +87,19 @@ const Purchases: React.FC<PurchasesProps> = ({ products, setProducts, suppliers,
   const handleCheckout = () => {
     if (cart.length === 0) return;
     if (paymentMethod === 'BORC' && !selectedSupplierId) {
-      alert("Borca mədaxil üçün təchizatçı seçilməlidir!");
+      toast.error('Borca mədaxil üçün təchizatçı seçilməlidir!');
       return;
     }
 
     const totalCost = cart.reduce((sum, item) => sum + (item.quantity * item.cost), 0);
 
     const newPurchase: Purchase = {
-      id: Date.now().toString(),
+      id: generateId(),
       supplierId: selectedSupplierId || undefined,
-      date: new Date().toISOString(),
+      date: purchaseDate ? new Date(`${purchaseDate}T12:00:00`).toISOString() : new Date().toISOString(),
+      invoiceNo: invoiceNo.trim() || undefined,
+      supplierInvoiceNo: supplierInvoiceNo.trim() || undefined,
+      note: purchaseNote.trim() || undefined,
       items: cart.map(c => ({
         productId: c.product.id,
         name: c.product.name,
@@ -84,17 +110,44 @@ const Purchases: React.FC<PurchasesProps> = ({ products, setProducts, suppliers,
       paymentMethod
     };
 
-    // Update stock & cost correctly
+    const movementEntries: Omit<InventoryMovement, 'id' | 'date' | 'userName'>[] = cart.map((item) => ({
+      productId: item.product.id,
+      productName: item.product.name,
+      type: 'PURCHASE',
+      quantityChange: item.quantity,
+      stockAfter: item.product.stock + item.quantity,
+      unit: item.product.unit,
+      refId: newPurchase.id,
+      note: `Mədaxil ${newPurchase.invoiceNo || `#${newPurchase.id.slice(0, 8)}`}`,
+    }));
+
     setProducts(prev => prev.map(p => {
       const purchased = cart.find(c => c.product.id === p.id);
       if (purchased) {
-        return { ...p, stock: p.stock + purchased.quantity, cost: purchased.cost }; // Update cost to the latest purchased cost
+        const newStock = p.stock + purchased.quantity;
+        const weightedCost = newStock > 0
+          ? (p.stock * p.cost + purchased.quantity * purchased.cost) / newStock
+          : purchased.cost;
+        return { ...p, stock: newStock, cost: weightedCost };
       }
       return p;
     }));
+    movementEntries.forEach((entry) => addInventoryMovement?.(entry));
 
     if (paymentMethod === 'BORC' && selectedSupplierId) {
+       const supplier = suppliers.find((s) => s.id === selectedSupplierId);
+       const balanceAfter = (supplier?.debt || 0) + totalCost;
        setSuppliers(prev => prev.map(s => s.id === selectedSupplierId ? { ...s, debt: s.debt + totalCost } : s));
+       addDebtEntry?.({
+         entityType: 'SUPPLIER',
+         entityId: selectedSupplierId,
+         type: 'PURCHASE',
+         direction: 'INCREASE',
+         amount: totalCost,
+         balanceAfter,
+         refId: newPurchase.id,
+         note: `Borca mədaxil ${newPurchase.invoiceNo || `#${newPurchase.id.slice(0, 8)}`}`,
+       });
     }
 
     setPurchases(prev => [...prev, newPurchase]);
@@ -103,7 +156,11 @@ const Purchases: React.FC<PurchasesProps> = ({ products, setProducts, suppliers,
     setCart([]);
     setSelectedSupplierId('');
     setPaymentMethod('NAGD');
-    alert("Mədaxil uğurla tamamlandı!");
+    setInvoiceNo('');
+    setSupplierInvoiceNo('');
+    setPurchaseNote('');
+    setPurchaseDate(new Date().toISOString().slice(0, 10));
+    toast.success('Mədaxil uğurla tamamlandı!');
   };
 
   return (
@@ -184,6 +241,21 @@ const Purchases: React.FC<PurchasesProps> = ({ products, setProducts, suppliers,
                   <span className="font-medium text-slate-600">Yekun Xərc:</span>
                   <span className="text-2xl font-bold text-slate-900">{cart.reduce((s, i) => s + (i.quantity * i.cost), 0).toFixed(2)} ₼</span>
                </div>
+
+               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                 <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Daxili qaimə</label>
+                    <input className="w-full border border-slate-300 p-2 rounded text-sm outline-none bg-white" value={invoiceNo} onChange={e => setInvoiceNo(e.target.value)} placeholder="M-2026-001" />
+                 </div>
+                 <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Təchizatçı qaiməsi</label>
+                    <input className="w-full border border-slate-300 p-2 rounded text-sm outline-none bg-white" value={supplierInvoiceNo} onChange={e => setSupplierInvoiceNo(e.target.value)} placeholder="Qaimə №" />
+                 </div>
+                 <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Tarix</label>
+                    <input type="date" className="w-full border border-slate-300 p-2 rounded text-sm outline-none bg-white" value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} />
+                 </div>
+               </div>
                
                <div className="grid grid-cols-2 gap-3">
                  <div>
@@ -204,6 +276,11 @@ const Purchases: React.FC<PurchasesProps> = ({ products, setProducts, suppliers,
                       <option value="BORC">Borca Yaz (Nisyə)</option>
                     </select>
                  </div>
+               </div>
+
+               <div>
+                  <label className="text-xs font-semibold text-slate-500 uppercase">Qeyd</label>
+                  <input className="w-full border border-slate-300 p-2 rounded text-sm outline-none bg-white" value={purchaseNote} onChange={e => setPurchaseNote(e.target.value)} placeholder="Daşıma, endirim, əlavə qeyd..." />
                </div>
 
                <button onClick={handleCheckout} className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold shadow-sm flex justify-center items-center gap-2">

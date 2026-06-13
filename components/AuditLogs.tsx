@@ -1,6 +1,6 @@
 import React from 'react';
 import { AuditLogEntry, AuditAction } from '../types';
-import { History, PlusCircle, Trash2, ShoppingCart, Edit, Calendar, FileSpreadsheet } from 'lucide-react';
+import { History, PlusCircle, Trash2, ShoppingCart, Edit, FileSpreadsheet, RotateCcw, Calendar, User } from 'lucide-react';
 
 interface AuditLogsProps {
   logs: AuditLogEntry[];
@@ -14,6 +14,7 @@ const AuditLogs: React.FC<AuditLogsProps> = ({ logs }) => {
       case AuditAction.SALE: return <ShoppingCart size={18} className="text-blue-600" />;
       case AuditAction.UPDATE: return <Edit size={18} className="text-amber-600" />;
       case AuditAction.BULK_IMPORT: return <FileSpreadsheet size={18} className="text-violet-600" />;
+      case AuditAction.REFUND: return <RotateCcw size={18} className="text-orange-600" />;
       default: return <History size={18} className="text-slate-600" />;
     }
   };
@@ -25,6 +26,7 @@ const AuditLogs: React.FC<AuditLogsProps> = ({ logs }) => {
       case AuditAction.SALE: return 'Satış';
       case AuditAction.UPDATE: return 'Yeniləndi';
       case AuditAction.BULK_IMPORT: return 'Toplu İdxal';
+      case AuditAction.REFUND: return 'Geri Qaytarma';
       default: return action;
     }
   };
@@ -36,6 +38,7 @@ const AuditLogs: React.FC<AuditLogsProps> = ({ logs }) => {
       case AuditAction.SALE: return 'bg-blue-50 text-blue-700 border-blue-100';
       case AuditAction.UPDATE: return 'bg-amber-50 text-amber-700 border-amber-100';
       case AuditAction.BULK_IMPORT: return 'bg-violet-50 text-violet-700 border-violet-100';
+      case AuditAction.REFUND: return 'bg-orange-50 text-orange-700 border-orange-100';
       default: return 'bg-slate-50 text-slate-700 border-slate-100';
     }
   };
@@ -56,8 +59,9 @@ const AuditLogs: React.FC<AuditLogsProps> = ({ logs }) => {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 text-slate-600 text-sm font-medium border-b border-slate-100">
-                <th className="p-4 w-56">Tarix</th>
-                <th className="p-4 w-40">Əməliyyat</th>
+                <th className="p-4 w-48">Tarix</th>
+                <th className="p-4 w-36">Əməliyyat</th>
+                <th className="p-4 w-36">İstifadəçi</th>
                 <th className="p-4">Detallar</th>
               </tr>
             </thead>
@@ -74,6 +78,16 @@ const AuditLogs: React.FC<AuditLogsProps> = ({ logs }) => {
                       {getActionLabel(log.action)}
                     </span>
                   </td>
+                  <td className="p-4 text-slate-600 text-sm">
+                    {log.userName ? (
+                      <span className="flex items-center gap-1.5">
+                        <User size={14} className="text-slate-400" />
+                        {log.userName}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
+                  </td>
                   <td className="p-4 text-slate-700 font-medium">
                     {log.details}
                   </td>
@@ -81,7 +95,7 @@ const AuditLogs: React.FC<AuditLogsProps> = ({ logs }) => {
               ))}
               {logs.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="p-12 text-center text-slate-400">
+                  <td colSpan={4} className="p-12 text-center text-slate-400">
                     Hələ heç bir əməliyyat qeydə alınmayıb.
                   </td>
                 </tr>

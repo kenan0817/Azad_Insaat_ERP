@@ -1,20 +1,28 @@
 import React, { useState } from 'react';
-import { Customer, AuditAction } from '../types';
+import { Customer, AuditAction, DebtLedgerEntry } from '../types';
 import { Users, Plus, Search, MapPin, Phone, CreditCard, Mail, Edit, Trash2, X } from 'lucide-react';
+import { generateId } from '../utils/id';
+import ConfirmModal from './ConfirmModal';
+import { toast } from './Toast';
 
 interface CustomersProps {
   customers: Customer[];
   setCustomers: React.Dispatch<React.SetStateAction<Customer[]>>;
   addLog: (action: AuditAction, details: string) => void;
+  debtLedger?: DebtLedgerEntry[];
+  addDebtEntry?: (entry: Omit<DebtLedgerEntry, 'id' | 'date' | 'userName'>) => void;
+  canDelete?: boolean;
+  canEdit?: boolean;
 }
 
-const Customers: React.FC<CustomersProps> = ({ customers, setCustomers, addLog }) => {
+const Customers: React.FC<CustomersProps> = ({ customers, setCustomers, addLog, debtLedger = [], addDebtEntry, canDelete = true, canEdit = true }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [payingDebtFor, setPayingDebtFor] = useState<string | null>(null);
   const [debtAmount, setDebtAmount] = useState<string>('');
 
   const [formData, setFormData] = useState<Partial<Customer>>({});
+  const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
 
   const filteredCustomers = customers.filter(c => 
     c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -31,7 +39,7 @@ const Customers: React.FC<CustomersProps> = ({ customers, setCustomers, addLog }
     } else {
       // Add new
       const newCustomer: Customer = {
-        id: Date.now().toString(),
+        id: generateId(),
         name: formData.name,
         phone: formData.phone,
         email: formData.email,
@@ -46,17 +54,14 @@ const Customers: React.FC<CustomersProps> = ({ customers, setCustomers, addLog }
     setFormData({});
   };
 
-  const handleDeleteCustomer = (id: string, name: string) => {
-    if(confirm(`Əminsiniz ki, müştərini silmək istəyirsiniz: ${name}?`)) {
-       setCustomers(prev => prev.filter(c => c.id !== id));
-       addLog(AuditAction.DELETE, `Müştəri silindi: ${name}`);
-    }
+  const handleDeleteCustomer = (customer: Customer) => {
+    setDeleteTarget(customer);
   };
 
   const handlePayDebt = (id: string, currentDebt: number) => {
     const amount = parseFloat(debtAmount);
     if (!amount || amount <= 0 || amount > currentDebt) {
-      alert("Düzgün məbləğ daxil edin.");
+      toast.error('Düzgün məbləğ daxil edin');
       return;
     }
     
@@ -66,7 +71,17 @@ const Customers: React.FC<CustomersProps> = ({ customers, setCustomers, addLog }
     
     const customer = customers.find(c => c.id === id);
     if(customer) {
-      addLog(AuditAction.UPDATE, `Müştəri (${customer.name}) borcunu ödədi: ${amount} ₼. Qalıq borc: ${currentDebt - amount} ₼`);
+      const balanceAfter = currentDebt - amount;
+      addDebtEntry?.({
+        entityType: 'CUSTOMER',
+        entityId: id,
+        type: 'PAYMENT',
+        direction: 'DECREASE',
+        amount,
+        balanceAfter,
+        note: `Borc ödənişi: ${customer.name}`,
+      });
+      addLog(AuditAction.UPDATE, `Müştəri (${customer.name}) borcunu ödədi: ${amount} ₼. Qalıq borc: ${balanceAfter} ₼`);
     }
 
     setPayingDebtFor(null);
@@ -108,12 +123,16 @@ const Customers: React.FC<CustomersProps> = ({ customers, setCustomers, addLog }
         {filteredCustomers.map(customer => (
           <div key={customer.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 hover:shadow-md transition-shadow relative group">
             <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-               <button onClick={() => { setFormData(customer); setIsModalOpen(true); }} className="p-1.5 text-slate-400 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 rounded-lg">
-                 <Edit size={16} />
-               </button>
-               <button onClick={() => handleDeleteCustomer(customer.id, customer.name)} className="p-1.5 text-slate-400 hover:text-red-500 bg-slate-50 hover:bg-red-50 rounded-lg">
-                 <Trash2 size={16} />
-               </button>
+               {canEdit && (
+                 <button onClick={() => { setFormData(customer); setIsModalOpen(true); }} className="p-1.5 text-slate-400 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 rounded-lg">
+                   <Edit size={16} />
+                 </button>
+               )}
+               {canDelete && (
+                 <button onClick={() => handleDeleteCustomer(customer)} className="p-1.5 text-slate-400 hover:text-red-500 bg-slate-50 hover:bg-red-50 rounded-lg">
+                   <Trash2 size={16} />
+                 </button>
+               )}
             </div>
             
             <div className="flex items-center gap-4 mb-4 pr-16">
@@ -140,6 +159,25 @@ const Customers: React.FC<CustomersProps> = ({ customers, setCustomers, addLog }
                 </div>
               )}
             </div>
+
+            {debtLedger.some((entry) => entry.entityType === 'CUSTOMER' && entry.entityId === customer.id) && (
+              <div className="mb-5 rounded-lg border border-slate-100 bg-slate-50 p-3">
+                <p className="text-xs font-bold text-slate-500 uppercase mb-2">Son borc hərəkəti</p>
+                <div className="space-y-1">
+                  {debtLedger
+                    .filter((entry) => entry.entityType === 'CUSTOMER' && entry.entityId === customer.id)
+                    .slice(0, 3)
+                    .map((entry) => (
+                      <div key={entry.id} className="flex justify-between gap-2 text-xs">
+                        <span className="text-slate-600 truncate">{entry.note || entry.type}</span>
+                        <span className={`font-bold whitespace-nowrap ${entry.direction === 'INCREASE' ? 'text-rose-600' : 'text-emerald-600'}`}>
+                          {entry.direction === 'INCREASE' ? '+' : '-'}{entry.amount.toFixed(2)} ₼
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
 
             <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
                <div>
@@ -272,6 +310,21 @@ const Customers: React.FC<CustomersProps> = ({ customers, setCustomers, addLog }
             </div>
           </div>
         </div>
+      )}
+
+      {deleteTarget && (
+        <ConfirmModal
+          title="Müştərini sil"
+          message={`Əminsiniz ki, "${deleteTarget.name}" silinsin?`}
+          confirmLabel="Sil"
+          variant="danger"
+          onConfirm={() => {
+            setCustomers((prev) => prev.filter((c) => c.id !== deleteTarget.id));
+            addLog(AuditAction.DELETE, `Müştəri silindi: ${deleteTarget.name}`);
+            setDeleteTarget(null);
+          }}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
     </div>
   );
